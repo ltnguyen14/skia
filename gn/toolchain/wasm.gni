@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("../../modules/canvaskit/canvaskit.gni")
+import("../../modules/lamkit/lamkit.gni")
+# import("../../modules/canvaskit/canvaskit.gni")
 
 # Defines the configuration of emscripten for building WASM targets.
 import("../skia.gni")

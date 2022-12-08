@@ -1698,7 +1698,8 @@ group("modules") {
   ]
 
   if (is_wasm) {
-    deps += [ "modules/canvaskit" ]
+    deps += [ "modules/lamkit" ]
+    # deps += [ "modules/canvaskit" ]
   }
 }
 
@@ -3131,7 +3132,7 @@ if (skia_enable_tools) {
     testonly = true
     deps = []
     if (is_wasm) {
-      deps += [ "modules/canvaskit:viewer_wasm" ]
+      # deps += [ "modules/canvaskit:viewer_wasm" ]
     }
   }
 

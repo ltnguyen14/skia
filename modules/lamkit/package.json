@@ -1,0 +1,12 @@
+{
+  "name": "lamkit-local",
+  "version": "0.0.0",
+  "description": "private",
+  "private": true,
+  "main": "index.js",
+  "devDependencies": {
+    "requirejs": "~2.3.5"
+  },
+  "author": "",
+  "license": "BSD-3-Clause"
+}

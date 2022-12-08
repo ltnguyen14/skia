@@ -26,7 +26,7 @@ dpkg_all_installed() {
 
 if command -v lsb_release > /dev/null ; then
     case $(lsb_release -i -s) in
-        Ubuntu|Debian)
+        Ubuntu|Debian|Pop)
             PACKAGES=$(cat<<-EOF
 		build-essential
 		freeglut3-dev
