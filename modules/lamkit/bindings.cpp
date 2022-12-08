@@ -41,6 +41,44 @@ struct ColorSettings {
   GrGLenum pixFormat;
 };
 
+class SkottieAssetProvider : public skottie::ResourceProvider {
+ public:
+  ~SkottieAssetProvider() override = default;
+  using AssetVec = std::vector<std::pair<SkString, sk_sp<SkData>>>;
+
+  static sk_sp<SkottieAssetProvider> Make(AssetVec assets) {
+    return sk_sp<SkottieAssetProvider>(new SkottieAssetProvider(assets));
+  }
+
+  sk_sp<skottie::ImageAsset> loadImageAsset(const char[] /* path */,
+                                            const char name[],
+                                            const char[] /* id */) const override {
+    if (auto data = this->findAsset(name)) {
+      return skresources::MultiFrameImageAsset::Make(std::move(data));
+    }
+
+    return nullptr;
+  }
+
+ private:
+  explicit SkottieAssetProvider(AssetVec assets)
+      : fAssets(std::move(assets)) {}
+
+  sk_sp<SkData> findAsset(const char name[]) const {
+    for (const auto& asset : fAssets) {
+      if (asset.first.equals(name)) {
+        return asset.second;
+      }
+    }
+
+    SkDebugf("Could not find %s\n", name);
+    return nullptr;
+  }
+
+  const AssetVec fAssets;
+};
+
+
 sk_sp<GrDirectContext> MakeGrContext() {
   // We assume that any calls we make to GL for the remainder of this function will go to the
   // desired WebGL Context.
@@ -51,7 +89,7 @@ sk_sp<GrDirectContext> MakeGrContext() {
 }
 
 sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int width, int height,
-    sk_sp<SkColorSpace> colorSpace) {
+                                       sk_sp<SkColorSpace> colorSpace) {
   // WebGL should already be clearing the color and stencil buffers, but do it again here to
   // ensure Skia receives them in the expected state.
   emscripten_glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -78,7 +116,7 @@ sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int widt
   info.fFormat = colorSettings.pixFormat;
   GrBackendRenderTarget target(width, height, sampleCnt, stencil, info);
   sk_sp<SkSurface> surface(SkSurface::MakeFromBackendRenderTarget(dContext.get(), target,
-        kBottomLeft_GrSurfaceOrigin, colorSettings.colorType, colorSpace, nullptr));
+                                                                  kBottomLeft_GrSurfaceOrigin, colorSettings.colorType, colorSpace, nullptr));
 
   if(!surface) {
     std::cout << "surface not created" << std::endl;
@@ -115,7 +153,7 @@ void RenderAnimation(sk_sp<SkSurface> surface, sk_sp<skottie::Animation> animati
 
 EMSCRIPTEN_BINDINGS(Skottie) {
   class_<skottie::Animation>("Animation")
-        .smart_ptr<sk_sp<skottie::Animation>>("sk_sp<Animation>");
+      .smart_ptr<sk_sp<skottie::Animation>>("sk_sp<Animation>");
 
   class_<GrDirectContext>("GrDirectContext")
       .smart_ptr<sk_sp<GrDirectContext>>("sk_sp<GrDirectContext>");
@@ -133,7 +171,20 @@ EMSCRIPTEN_BINDINGS(Skottie) {
   // public
   function("Paint", &Paint);
   function("RenderAnimation", &RenderAnimation);
-  function("MakeAnimation", optional_override([](std::string json)->sk_sp<skottie::Animation> {
-        return skottie::Animation::Make(json.c_str(), json.length());
-    }));
+  function("MakeAnimation", optional_override([](std::string json, sk_sp<skottie::ResourceProvider> rp)->sk_sp<skottie::Animation> {
+    return skottie::Animation::Builder()
+        .setResourceProvider(std::move(rp))
+        .make(json.c_str(), json.size());
+  }));
+
+  function("MakeResourceProvider", optional_override([]()->sk_sp<skottie::ResourceProvider> {
+    SkottieAssetProvider::AssetVec assets;
+
+    for (size_t i = 0; i < assetCount; i++) {
+      auto name  = SkString(assetNames[i]);
+      auto bytes = SkData::MakeFromMalloc(assetDatas[i], assetSizes[i]);
+      assets.push_back(std::make_pair(std::move(name), std::move(bytes)));
+    }
+    return SkottieAssetProvider::Make(std::move(assets));
+  }));
 }
