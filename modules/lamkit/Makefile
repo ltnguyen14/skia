@@ -41,6 +41,7 @@ debug:
 	./compile.sh debug_build
 	- rm -rf build/
 	mkdir build
+	cp ../canvaskit/build/* ./build
 	cp ../../out/canvaskit_wasm_debug/lamkit.js   ./build/
 	cp ../../out/canvaskit_wasm_debug/lamkit.wasm ./build/
 

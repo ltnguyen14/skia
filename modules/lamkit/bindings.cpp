@@ -3,6 +3,7 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <iostream>
+#include <vector>
 
 #ifdef CK_ENABLE_WEBGL
 #include "include/gpu/GrDirectContext.h"
@@ -15,6 +16,11 @@
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+
+// skottie
+#include "modules/skottie/include/Skottie.h"
+#include "modules/skottie/include/SkottieProperty.h"
+#include "modules/skottie/utils/SkottieUtils.h"
 
 #include <webgl/webgl1.h>
 #endif // CK_ENABLE_WEBGL
@@ -80,17 +86,54 @@ sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrDirectContext> dContext, int widt
   return surface;
 }
 
+void Paint(sk_sp<SkSurface> surface) {
+  const SkScalar scale = 256.0f;
+  const SkScalar R = 0.45f * scale;
+  const SkScalar TAU = 6.2831853f;
+  SkPath path;
+  path.moveTo(R, 0.0f);
+  for (int i = 1; i < 7; ++i) {
+    SkScalar theta = 3 * i * TAU / 7;
+    path.lineTo(R * cos(theta), R * sin(theta));
+  }
+  path.close();
+  SkPaint p;
+  p.setAntiAlias(true);
+  SkCanvas* canvas = surface->getCanvas();
+  canvas->clear(SK_ColorWHITE);
+  canvas->translate(0.5f * scale, 0.5f * scale);
+  canvas->drawPath(path, p);
+
+  surface->flush();
+}
+
+void RenderAnimation(sk_sp<SkSurface> surface, sk_sp<skottie::Animation> animation, double frame) {
+  animation->seekFrame(frame);
+  animation->render(surface->getCanvas());
+  surface->flush();
+}
+
 EMSCRIPTEN_BINDINGS(Skottie) {
+  class_<skottie::Animation>("Animation")
+        .smart_ptr<sk_sp<skottie::Animation>>("sk_sp<Animation>");
+
   class_<GrDirectContext>("GrDirectContext")
-    .smart_ptr<sk_sp<GrDirectContext>>("sk_sp<GrDirectContext>");
+      .smart_ptr<sk_sp<GrDirectContext>>("sk_sp<GrDirectContext>");
 
   class_<SkSurface>("Surface")
-    .smart_ptr<sk_sp<SkSurface>>("sk_sp<Surface>");
+      .smart_ptr<sk_sp<SkSurface>>("sk_sp<Surface>");
 
   class_<SkColorSpace>("ColorSpace")
-    .smart_ptr<sk_sp<SkColorSpace>>("sk_sp<ColorSpace>")
-    .class_function("_MakeSRGB", &SkColorSpace::MakeSRGB);
+      .smart_ptr<sk_sp<SkColorSpace>>("sk_sp<ColorSpace>")
+      .class_function("_MakeSRGB", &SkColorSpace::MakeSRGB);
 
   function("_MakeGrContext", &MakeGrContext);
   function("_MakeOnScreenGLSurface", &MakeOnScreenGLSurface);
+
+  // public
+  function("Paint", &Paint);
+  function("RenderAnimation", &RenderAnimation);
+  function("MakeAnimation", optional_override([](std::string json)->sk_sp<skottie::Animation> {
+        return skottie::Animation::Make(json.c_str(), json.length());
+    }));
 }
