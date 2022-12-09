@@ -3,7 +3,7 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <iostream>
-#include <vector>
+#include <unordered_map>
 
 #ifdef CK_ENABLE_WEBGL
 #include "include/gpu/GrDirectContext.h"
@@ -44,7 +44,7 @@ struct ColorSettings {
 class SkottieAssetProvider : public skottie::ResourceProvider {
  public:
   ~SkottieAssetProvider() override = default;
-  using AssetVec = std::vector<std::pair<SkString, sk_sp<SkData>>>;
+  using AssetVec = std::unordered_map<std::string, sk_sp<SkData>>;
 
   static sk_sp<SkottieAssetProvider> Make(AssetVec assets) {
     return sk_sp<SkottieAssetProvider>(new SkottieAssetProvider(assets));
@@ -53,8 +53,8 @@ class SkottieAssetProvider : public skottie::ResourceProvider {
   sk_sp<skottie::ImageAsset> loadImageAsset(const char[] /* path */,
                                             const char name[],
                                             const char[] /* id */) const override {
-    if (auto data = this->findAsset(name)) {
-      return skresources::MultiFrameImageAsset::Make(std::move(data));
+    if (auto data = this->fAssets.find(name); data != this->fAssets.end()) {
+      return skresources::MultiFrameImageAsset::Make(std::move(data->second));
     }
 
     return nullptr;
@@ -63,17 +63,6 @@ class SkottieAssetProvider : public skottie::ResourceProvider {
  private:
   explicit SkottieAssetProvider(AssetVec assets)
       : fAssets(std::move(assets)) {}
-
-  sk_sp<SkData> findAsset(const char name[]) const {
-    for (const auto& asset : fAssets) {
-      if (asset.first.equals(name)) {
-        return asset.second;
-      }
-    }
-
-    SkDebugf("Could not find %s\n", name);
-    return nullptr;
-  }
 
   const AssetVec fAssets;
 };
@@ -151,12 +140,22 @@ void RenderAnimation(sk_sp<SkSurface> surface, sk_sp<skottie::Animation> animati
   surface->flush();
 }
 
+using WASMPointerF32 = uintptr_t;
+using WASMPointerI32 = uintptr_t;
+using WASMPointerU8  = uintptr_t;
+using WASMPointerU16 = uintptr_t;
+using WASMPointerU32 = uintptr_t;
+using WASMPointer = uintptr_t;
+
 EMSCRIPTEN_BINDINGS(Skottie) {
   class_<skottie::Animation>("Animation")
       .smart_ptr<sk_sp<skottie::Animation>>("sk_sp<Animation>");
 
   class_<GrDirectContext>("GrDirectContext")
       .smart_ptr<sk_sp<GrDirectContext>>("sk_sp<GrDirectContext>");
+
+  class_<skottie::ResourceProvider>("ResourceProvider")
+      .smart_ptr<sk_sp<skottie::ResourceProvider>>("sk_sp<ResourceProvider>");
 
   class_<SkSurface>("Surface")
       .smart_ptr<sk_sp<SkSurface>>("sk_sp<Surface>");
@@ -177,14 +176,22 @@ EMSCRIPTEN_BINDINGS(Skottie) {
         .make(json.c_str(), json.size());
   }));
 
-  function("MakeResourceProvider", optional_override([]()->sk_sp<skottie::ResourceProvider> {
-    SkottieAssetProvider::AssetVec assets;
+  function("_MakeResourceProvider", optional_override([](size_t assetCount,
+                                                         WASMPointerU32 nptr,
+                                                         WASMPointerU32 dptr,
+                                                         WASMPointerU32 sptr)->sk_sp<skottie::ResourceProvider> {
+    const auto assetNames = reinterpret_cast<char**   >(nptr);
+    const auto assetDatas = reinterpret_cast<uint8_t**>(dptr);
+    const auto assetSizes = reinterpret_cast<size_t*  >(sptr);
 
+    SkottieAssetProvider::AssetVec assets;
+    assets.reserve(assetCount);
     for (size_t i = 0; i < assetCount; i++) {
-      auto name  = SkString(assetNames[i]);
+      auto name  = std::string(assetNames[i]);
       auto bytes = SkData::MakeFromMalloc(assetDatas[i], assetSizes[i]);
-      assets.push_back(std::make_pair(std::move(name), std::move(bytes)));
+      assets[name] = bytes;
     }
+
     return SkottieAssetProvider::Make(std::move(assets));
   }));
 }
